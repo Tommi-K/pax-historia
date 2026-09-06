@@ -38,6 +38,7 @@ import {
 import { translateLabel } from "../../runtime/translator.js";
 import { MAP_SETTING_KEYS, useMapSetting, useMapSettingValue } from "../../runtime/mapSettings.js";
 import { useWorldState } from "./useWorldState.js";
+import { buildProvinceOutlinePaint, PROVINCE_OUTLINE_MIN_ZOOM } from "./provinceOutlineStyle.js";
 import { V_NEXT_MARKER_SHAPE_LAYER_IDS } from "./vnext/presentationPolicy.js";
 import { resolveContextualPolityLabels } from "./vnext/polityNaming.js";
 
@@ -1517,17 +1518,10 @@ const WorldMap = ({ isGlobe = false }) => {
     "line-width": ["interpolate", ["linear"], ["zoom"], 3, 0.62, 8, 0.96, 12, 1.25],
     "line-opacity": showStockCountries ? 0.82 : 0,
   };
-  // Region hairlines serve both map kinds, but nothing renders pre-worldKnown.
-  // Tile hairlines fade in alongside the tile fills. The seed hairlines stay
-  // underneath for a little longer as a safety net: if a vector tile is late,
-  // the fallback fill should not turn into one borderless slab while panning.
-  const regionsOutlinePaint = {
-    "line-color": "rgba(7, 10, 14, 0.88)",
-    "line-width": ["interpolate", ["linear"], ["zoom"], 3, 0.22, 6, 0.32, 8, 0.48, 12, 0.78],
-    "line-opacity": worldKnown && !customActive
-      ? ["interpolate", ["linear"], ["zoom"], 6.8, 0, 7.4, 0.08, 8.2, 0.16, 10, 0.28, 12, 0.42]
-      : 0,
-  };
+  // Scenario geometry owns its grid; never stack stock outlines on top of it.
+  // Both paths use the same close-zoom hairline policy, and stay hidden until
+  // the world is known. Political frontiers remain visible independently.
+  const regionsOutlinePaint = buildProvinceOutlinePaint(worldKnown && !customActive);
 
   // Scenario-authored label styling (world.labelFont/labelTextColor/
   // labelHaloColor). The style has no glyphs endpoint, so MapLibre v5 draws
@@ -1722,7 +1716,7 @@ const WorldMap = ({ isGlobe = false }) => {
         <Layer
           id="regions-outline"
           type="line"
-          minzoom={8.25}
+          minzoom={PROVINCE_OUTLINE_MIN_ZOOM}
           source-layer="regions"
           filter={editedStockIds.length ? ["!", ["in", ["get", "GID_1"], ["literal", editedStockIds]]] : ["all"]}
           paint={regionsOutlinePaint}
@@ -1770,47 +1764,14 @@ const WorldMap = ({ isGlobe = false }) => {
             "fill-outline-color": CUSTOM_FILL_COLOR,
           }}
         />
-        {/* Provinces are a local interaction grid, not part of the political
-            silhouette. R18 brings them in at regional zoom instead of waiting
-            for an already-close camera. The first appearance is deliberately
-            faint, then ramps smoothly into a proper province grid.
-            This is the one canonical scenario-geometry outline layer. */}
+        {/* Only the province strokes disappear at overview zoom. Keep the
+            source and fills mounted so province selection still works. */}
         <Layer
           id="custom-regions-local-outline"
           type="line"
-          minzoom={4.20}
+          minzoom={PROVINCE_OUTLINE_MIN_ZOOM}
           layout={{ "line-cap": "round", "line-join": "round" }}
-          paint={{
-            "line-color": "rgba(8, 12, 18, 0.90)",
-            "line-width": [
-              "interpolate", ["linear"], ["zoom"],
-              4.20, 0.14,
-              4.75, 0.17,
-              5.25, 0.21,
-              6.0, 0.27,
-              7.0, 0.35,
-              8.0, 0.45,
-              10, 0.61,
-              12, 0.79,
-              14, 0.96,
-            ],
-            "line-opacity": customActive && worldKnown
-              ? [
-                  "interpolate", ["linear"], ["zoom"],
-                  4.20, 0.00,
-                  4.45, 0.045,
-                  4.85, 0.075,
-                  5.25, 0.11,
-                  5.75, 0.16,
-                  6.25, 0.22,
-                  7.0, 0.30,
-                  8.0, 0.39,
-                  10, 0.49,
-                  12, 0.58,
-                  14, 0.67,
-                ]
-              : 0,
-          }}
+          paint={buildProvinceOutlinePaint(customActive && worldKnown)}
         />
       </Source>
       )}
